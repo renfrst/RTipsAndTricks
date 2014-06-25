@@ -1,0 +1,83 @@
+# Optimization using numeric vector indexing for creating a variable from a lookup table
+
+I was running into some performance issues utilizing vector indexing.
+A solution was found in the [Nesterko.com](http://nesterko.com/blog/2011/04/29/drastic-r-speed-ups-via-vectorization-and-bug-fixes/) blog.
+For some background on vector indexing to create a new variable using a lookup table, see [Stackoverflow](http://stackoverflow.com/a/8433843).
+
+Load `data.table` package.
+
+```{r}
+require(data.table)
+```
+
+Load test data table.
+
+```{r}
+path <- file.path("E:", "DataRepository", "Medicaid", "Staged")
+load(file.path(path, "claims.RData"))
+names(dtClaims)
+head(dtClaims[, c("codeBetos", "facBetos")])
+```
+
+Create BETOS code and factor lookup tables.
+
+```{r}
+f <- file.path("E:", "LookupTablesAndCrosswalks", "BETOS", "betpuf13", "betpuf13.txt")
+dfBetos <- read.fwf(f, c(5, 1, 3, 8), header=FALSE, stringsAsFactors=FALSE, fill=TRUE, strip.white=TRUE)
+head(dfBetos)
+names(dfBetos) <- c("codeHcpcs", "filler", "codeBetos", "dateTermination")
+codeBetos <- dfBetos$codeBetos
+names(codeBetos) <- dfBetos$codeHcpcs
+```
+
+This is the code from the [Nesterko.com](http://nesterko.com/blog/2011/04/29/drastic-r-speed-ups-via-vectorization-and-bug-fixes/) blog.
+See part (b) in particular.
+We'll use this as a template.
+Do not evaluate; this is shown only for illustration.
+
+```{r, eval=FALSE}
+foo <- rnorm(1000000)
+names(foo) <- sample(letters, 1000000, replace = TRUE)
+ind <- sample(letters, 500000, replace = TRUE)
+system.time(res1 <- foo[ind])
+idx <- match(ind, names(foo))
+system.time(res2 <- foo[idx])
+all(res1 == res2)
+```
+
+Replicate Nesterko's code for our use.
+
+```{r}
+foo <- codeBetos
+ind <- dtClaims$cpt
+system.time(res1 <- foo[ind])
+idx <- match(ind, names(foo))
+system.time(res2 <- foo[idx])
+identical(res1, res2)
+```
+
+Performance difference between `res1` and `res2` is **huge!**
+
+
+## Comparison of suboptimal and optimized code
+
+Offending code.
+Shown for illustration.
+
+```{r, eval=FALSE, tidy=FALSE}
+dtClaims$codeBetos <- dtClaims[, codeBetos[cpt]]
+dtClaims$facBetos  <- dtClaims[, facBetos [cpt]]
+```
+
+Optimized code.
+This is what's used in the production version.
+
+```{r 013.ClaimsA, eval=FALSE, tidy=FALSE}
+idx1 <- match(dtClaims$cpt, names(codeBetos))
+idx2 <- match(dtClaims$cpt, names(facBetos ))
+system.time(
+  dtClaims <- dtClaims[,
+                       `:=` (codeBetos = codeBetos[idx],
+                             facBetos  = facBetos [idx])]
+)                     
+```
