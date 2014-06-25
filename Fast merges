@@ -1,0 +1,361 @@
+Goal: Find the Fastest Method for Merging
+
+========================================================
+
+
+
+This program compares the relative merging speed of:
+
+* `rxMerge`
+
+* `rxMergeXdf`
+
+* `merge` - using dataframes
+
+* `merge` - using datatables
+
+* `join` - using dataframes
+
+* `join` - using dataframes
+
+
+
+
+
+Preliminaries
+
+--------------------------------------------------------
+
+
+
+**Set file path.**
+
+
+
+```r
+
+path <- file.path("H:", "R files", "Test Data, Test Code")
+
+```
+
+
+
+
+
+**Load `plyr` and `data.table` packages.**
+
+
+
+```r
+
+library(plyr)
+
+library(data.table)
+
+```
+
+
+
+
+
+**Set RevoScalR progress reporting to no progress is reported to cut down on non-essential output.**
+
+
+
+```r
+
+rxOptions(reportProgress = 0)
+
+```
+
+
+
+
+
+
+
+**Create test datasets.**   
+
+The first dataset, `data`, mimicks the recipient file. It is long (500,000 records) and wide (12 variables, including member ID, age, and 10 character variables, *V1* through *V10*).   
+
+
+
+```r
+
+n = 5e+05  #Number of observations
+
+ID = seq(1:n)
+
+AGE = sample(seq(1:80), n, replace = T)
+
+for (i in 1:10) {
+
+    assign(paste("V", i, sep = ""), replicate(n, paste(sample(letters, 5, replace = T), 
+
+        collapse = "")))
+
+}
+
+
+
+data <- data.frame(ID, AGE, V1, V2, V3, V4, V5, V6, V7, V8, V9, V10)
+
+data <- data[order(data$ID), ]
+
+head(data)
+
+```
+
+
+
+```
+
+##   ID AGE    V1    V2    V3    V4    V5    V6    V7    V8    V9   V10
+
+## 1  1  16 nfcyy khalh tmuip vwsey wwzob oeokv olgtn afaip syjlw zctws
+
+## 2  2  33 latzm smqde smeln hhoze zpdmd ikckb mqoub azole mwkqn fnqra
+
+## 3  3  79 wxchd orysx pgzxp ratdm rpkmj hcsre lezhv iysma jdibq blahu
+
+## 4  4  61 krzmq isqnb htnna yiduh uxzfw yvkqq tgszw gsprx ptuzx jvksa
+
+## 5  5  32 brsly ygohj aceho gulne qtbci weypx vjwyn yysap crgxe gkgui
+
+## 6  6  14 rjvor qrwzn hevqb kkhtf staif enzek imvxt stqse obyok zbzad
+
+```
+
+
+
+
+
+
+
+The second dataset, `LU`, mimicks a typical "Lookup" file in my processes. It has two variables - member ID (on which to merge) and an indicator variable. Only a subset of the members in `data` appear in `LU`.
+
+
+
+```r
+
+ID2 <- sample(ID, 10000, replace = F)
+
+new <- sample(c(0, 1), 10000, replace = T)
+
+
+
+LU <- data.frame(ID = ID2, new)
+
+LU <- LU[order(LU$ID), ]
+
+head(LU)
+
+```
+
+
+
+```
+
+##       ID new
+
+## 4370   3   0
+
+## 8113  59   0
+
+## 6504  92   0
+
+## 9520  94   1
+
+## 8502 131   1
+
+## 3380 159   1
+
+```
+
+
+
+
+
+These are saved as `.xdf` files.
+
+
+
+```r
+
+rxDataFrameToXdf(data, file.path(path, "data.xdf"), overwrite = T)
+
+rxDataFrameToXdf(LU, file.path(path, "LU.xdf"), overwrite = T)
+
+```
+
+
+
+
+
+Compare merges
+
+--------------------------------------------------------
+
+
+
+**`rxMerge`**
+
+
+
+```r
+
+system.time(rxMerge(inData1 = file.path(path, "data.xdf"), inData2 = file.path(path, 
+
+    "LU.xdf"), outFile = file.path(path, "results_rxMerge.xdf"), matchVars = "ID", 
+
+    type = "left", autoSort = F, maxRowsByCols = NULL, overwrite = T))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##   26.00    2.26   49.77
+
+```
+
+
+
+
+
+**rxMergeXdf**
+
+
+
+```r
+
+system.time(rxMergeXdf(inFile1 = file.path(path, "data.xdf"), inFile2 = file.path(path, 
+
+    "LU.xdf"), outFile = file.path(path, "results_rxMergeXdf.xdf"), matchVars = "ID", 
+
+    type = "left", overwrite = T))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##   26.38    1.93   47.05
+
+```
+
+
+
+
+
+**merge - using dataframes**
+
+
+
+```r
+
+system.time(mergedf <- merge(data, LU, by = "ID", all.x = T, sort = F))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##   28.61    0.75   29.46
+
+```
+
+
+
+
+
+**merge - using datatables**
+
+
+
+```r
+
+datadt <- data.table(data)
+
+LUdt <- data.table(LU)
+
+system.time(mergedt <- merge(datadt, LUdt, by = "ID", all.x = T, sort = F))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##    0.08    0.05    0.13
+
+```
+
+
+
+
+
+**join - using dataframes**
+
+
+
+```r
+
+system.time(joindf <- join(data, LU, by = "ID", type = "left"))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##   18.29    0.45   18.78
+
+```
+
+
+
+
+
+**join - using dataframes**
+
+
+
+```r
+
+system.time(joindt <- join(datadt, LUdt, by = "ID", type = "left"))
+
+```
+
+
+
+```
+
+##    user  system elapsed 
+
+##    6.73    0.30    7.10
+
+```
+
+
+
+
+
+
+
+Winner: `merge` using datatables
+
+--------------------------------------------------------
